@@ -19,6 +19,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Iterator;
 
 import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
@@ -142,12 +143,15 @@ public class MainActivity extends AppCompatActivity {
                         }
                         reader.close();
 
-                        final String message = response.toString();
-                        Log.d(TAG, "Received message: " + message);
+                        final String rawMessage = response.toString();
+                        Log.d(TAG, "Received message: " + rawMessage);
+
+                        // Format the message
+                        String formattedMessage = formatMessage(rawMessage);
 
                         mainHandler.post(() -> {
                             if (messageTextView != null) {
-                                messageTextView.setText(message);
+                                messageTextView.setText(formattedMessage);
                             } else {
                                 Log.e(TAG, "messageTextView is null when trying to update!");
                             }
@@ -181,6 +185,28 @@ public class MainActivity extends AppCompatActivity {
                 }
             }
         }).start();
+    }
+
+    private String formatMessage(String rawMessage) {
+        try {
+            // Parse the JSON message if it's in JSON format
+            JSONObject json = new JSONObject(rawMessage);
+            // Format it according to your needs
+            // This is an example - modify according to your actual message structure
+            StringBuilder formatted = new StringBuilder();
+            formatted.append("Message received:\n");
+            
+            // Iterate through JSON keys and format them
+            for (Iterator<String> it = json.keys(); it.hasNext(); ) {
+                String key = it.next();
+                formatted.append(key).append(": ").append(json.get(key)).append("\n");
+            }
+            
+            return formatted.toString();
+        } catch (Exception e) {
+            // If not JSON or other error, return raw message
+            return rawMessage;
+        }
     }
 
     @Override
