@@ -1,20 +1,13 @@
 package com.example.secapp2;
 
 import android.os.Bundle;
-import android.view.View;
 import android.view.Menu;
 import android.os.Handler;
 import android.os.Looper;
 import android.widget.TextView;
-import java.io.BufferedReader;
-import java.io.InputStreamReader;
-import java.net.HttpURLConnection;
-import java.net.URL;
 import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,36 +25,47 @@ import androidx.drawerlayout.widget.DrawerLayout;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.example.secapp2.databinding.ActivityMainBinding;
+import okhttp3.Call;
+import okhttp3.Callback;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
+import okhttp3.ResponseBody;
+import java.util.concurrent.TimeUnit;
+import java.io.IOException;
+import androidx.annotation.NonNull;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "MainActivity";
     private AppBarConfiguration mAppBarConfiguration;
-    private ActivityMainBinding binding;
     private TextView messageTextView;
     private Handler mainHandler;
-    private boolean isListening = true;
+    private OkHttpClient client;
+    private static final String SERVER_URL = "http://170.64.170.80:3000/canBusData";
+    private ScheduledExecutorService scheduler;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        binding = ActivityMainBinding.inflate(getLayoutInflater());
+        com.example.secapp2.databinding.ActivityMainBinding binding = ActivityMainBinding.inflate(getLayoutInflater());
         setContentView(binding.getRoot());
 
         setSupportActionBar(binding.appBarMain.toolbar);
-        binding.appBarMain.fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null)
-                        .setAnchorView(R.id.fab).show();
-            }
-        });
+        binding.appBarMain.fab.setOnClickListener(view -> 
+            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
+                    .setAction("Action", null)
+                    .setAnchorView(R.id.fab)
+                    .show()
+        );
         DrawerLayout drawer = binding.drawerLayout;
         NavigationView navigationView = binding.navView;
-        // Passing each menu ID as a set of Ids because each
-        // menu should be considered as top level destinations.
+        
         mAppBarConfiguration = new AppBarConfiguration.Builder(
                 R.id.nav_home, R.id.nav_gallery, R.id.nav_slideshow)
                 .setOpenableLayout(drawer)
@@ -70,121 +74,105 @@ public class MainActivity extends AppCompatActivity {
         NavigationUI.setupActionBarWithNavController(this, navController, mAppBarConfiguration);
         NavigationUI.setupWithNavController(navigationView, navController);
 
-        // Initialize TextView using binding
+        // Use string resource instead of literal
         messageTextView = binding.appBarMain.contentMain.messageTextView;
-        if (messageTextView == null) {
-            Log.e(TAG, "messageTextView not found!");
-        } else {
-            messageTextView.setText("Waiting for messages...");
-        }
+        messageTextView.setText(R.string.waiting_for_messages);
+        
         mainHandler = new Handler(Looper.getMainLooper());
 
-        // Start listening to server in a background thread
+        // Initialize OkHttpClient with configured timeouts
+        client = new OkHttpClient.Builder()
+            .connectTimeout(10, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
+            .writeTimeout(10, TimeUnit.SECONDS)
+            .build();
+
+        // Start the server listener using scheduler
         startServerListener();
     }
 
     private void startServerListener() {
-        new Thread(() -> {
-            while (isListening) {
-                try {
-                    Log.d(TAG, "Attempting to connect to server...");
-                    URL url = new URL("http://170.64.170.80:3000/canBusData");
-                    HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                    connection.setRequestMethod("POST");
-                    connection.setRequestProperty("Content-Type", "application/json");
-                    connection.setDoOutput(true);
-                    connection.setConnectTimeout(10000);
-                    connection.setReadTimeout(10000);
+        // Use scheduleWithFixedDelay instead of scheduleAtFixedRate
+        scheduler = Executors.newSingleThreadScheduledExecutor();
+        scheduler.scheduleWithFixedDelay(
+            this::sendCanBusData,
+            0,  // initial delay
+            1,  // delay between executions
+            TimeUnit.SECONDS
+        );
+    }
 
-                    // Create sample data (you should replace this with real data)
-                    List<Map<String, Object>> canBusDataList = new ArrayList<>();
-                    Map<String, Object> sampleData = new HashMap<>();
-                    sampleData.put("UTC", System.currentTimeMillis());
-                    sampleData.put("UUID", "sample-uuid");
-                    sampleData.put("O_SPD", "60");
-                    sampleData.put("O_THR", 50L);
-                    sampleData.put("A_BRKLT", 1L);
-                    sampleData.put("A_RIND", 0L);
-                    sampleData.put("A_LIND", 0L);
-                    sampleData.put("A_ROLL", 0L);
-                    sampleData.put("userId", 1L);
-                    sampleData.put("vehicleNumPlate", "ABC123");
-                    canBusDataList.add(sampleData);
+    private void sendCanBusData() {
+        try {
+            // Create sample data
+            List<Map<String, Object>> canBusDataList = new ArrayList<>();
+            Map<String, Object> sampleData = new HashMap<>();
+            sampleData.put("UTC", System.currentTimeMillis());
+            sampleData.put("UUID", "sample-uuid");
+            sampleData.put("O_SPD", "60");
+            sampleData.put("O_THR", 50L);
+            sampleData.put("A_BRKLT", 1L);
+            sampleData.put("A_RIND", 0L);
+            sampleData.put("A_LIND", 0L);
+            sampleData.put("A_ROLL", 0L);
+            sampleData.put("userId", 1L);
+            sampleData.put("vehicleNumPlate", "ABC123");
+            canBusDataList.add(sampleData);
 
-                    // Prepare JSON data
-                    JSONArray jsonArray = new JSONArray();
-                    for (Map<String, Object> packet : canBusDataList) {
-                        JSONObject jsonObject = new JSONObject(packet);
-                        jsonArray.put(jsonObject);
-                    }
+            JSONArray jsonArray = new JSONArray();
+            for (Map<String, Object> packet : canBusDataList) {
+                JSONObject jsonObject = new JSONObject(packet);
+                jsonArray.put(jsonObject);
+            }
 
-                    JSONObject jsonInput = new JSONObject();
-                    jsonInput.put("canBusData", jsonArray);
+            JSONObject jsonInput = new JSONObject();
+            jsonInput.put("canBusData", jsonArray);
 
-                    // Send the data
-                    try (OutputStream os = connection.getOutputStream()) {
-                        byte[] input = jsonInput.toString().getBytes(StandardCharsets.UTF_8);
-                        os.write(input, 0, input.length);
-                    }
+            // Use the new RequestBody.create method
+            RequestBody body = RequestBody.create(
+                jsonInput.toString(),
+                MediaType.get("application/json; charset=utf-8")
+            );
 
-                    int responseCode = connection.getResponseCode();
-                    Log.d(TAG, "Server response code: " + responseCode);
+            Request request = new Request.Builder()
+                .url(SERVER_URL)
+                .post(body)
+                .build();
 
-                    if (responseCode == HttpURLConnection.HTTP_OK) {
-                        // Read the response
-                        BufferedReader reader = new BufferedReader(
-                            new InputStreamReader(connection.getInputStream())
-                        );
-                        StringBuilder response = new StringBuilder();
-                        String line;
-                        
-                        while ((line = reader.readLine()) != null) {
-                            response.append(line);
+            // Execute request asynchronously with @NonNull annotations
+            client.newCall(request).enqueue(new Callback() {
+                @Override
+                public void onFailure(@NonNull Call call, @NonNull IOException e) {
+                    Log.e(TAG, "Error sending data", e);
+                    updateUI(getString(R.string.error_message, e.getMessage()));
+                }
+
+                @Override
+                public void onResponse(@NonNull Call call, @NonNull Response response) throws IOException {
+                    ResponseBody responseBody = response.body();
+                    if (responseBody != null) {
+                        try {
+                            final String responseData = responseBody.string();
+                            Log.d(TAG, "Server response: " + responseData);
+                            updateUI(formatMessage(responseData));
+                        } finally {
+                            responseBody.close();
                         }
-                        reader.close();
-
-                        final String rawMessage = response.toString();
-                        Log.d(TAG, "Received message: " + rawMessage);
-
-                        // Format the message
-                        String formattedMessage = formatMessage(rawMessage);
-
-                        mainHandler.post(() -> {
-                            if (messageTextView != null) {
-                                messageTextView.setText(formattedMessage);
-                            } else {
-                                Log.e(TAG, "messageTextView is null when trying to update!");
-                            }
-                        });
-                    } else {
-                        Log.e(TAG, "Server returned error code: " + responseCode);
-                        mainHandler.post(() -> {
-                            if (messageTextView != null) {
-                                messageTextView.setText("Error: Server returned code " + responseCode);
-                            }
-                        });
-                    }
-
-                    // Wait before next request
-                    Thread.sleep(1000);
-
-                } catch (Exception e) {
-                    Log.e(TAG, "Error in server connection: ", e);
-                    mainHandler.post(() -> {
-                        if (messageTextView != null) {
-                            messageTextView.setText("Error: " + e.getMessage());
-                        }
-                    });
-                    
-                    // Wait before retrying
-                    try {
-                        Thread.sleep(5000);
-                    } catch (InterruptedException ie) {
-                        Thread.currentThread().interrupt();
                     }
                 }
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error preparing data", e);
+        }
+    }
+
+    private void updateUI(final String message) {
+        mainHandler.post(() -> {
+            if (messageTextView != null) {
+                messageTextView.setText(message);
             }
-        }).start();
+        });
     }
 
     private String formatMessage(String rawMessage) {
@@ -212,7 +200,18 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        isListening = false;
+        
+        // Shutdown the scheduler
+        if (scheduler != null) {
+            scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(800, TimeUnit.MILLISECONDS)) {
+                    scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+            }
+        }
     }
 
     @Override
