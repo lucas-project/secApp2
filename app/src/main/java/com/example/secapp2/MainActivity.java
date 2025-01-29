@@ -8,10 +8,7 @@ import android.widget.TextView;
 import android.util.Log;
 import org.json.JSONArray;
 import org.json.JSONObject;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+
 import java.util.Iterator;
 
 import com.google.android.material.snackbar.Snackbar;
@@ -104,27 +101,10 @@ public class MainActivity extends AppCompatActivity {
 
     private void sendCanBusData() {
         try {
-            // Create sample data
-            List<Map<String, Object>> canBusDataList = new ArrayList<>();
-            Map<String, Object> sampleData = new HashMap<>();
-            sampleData.put("UTC", System.currentTimeMillis());
-            sampleData.put("UUID", "sample-uuid");
-            sampleData.put("O_SPD", "60");
-            sampleData.put("O_THR", 50L);
-            sampleData.put("A_BRKLT", 1L);
-            sampleData.put("A_RIND", 0L);
-            sampleData.put("A_LIND", 0L);
-            sampleData.put("A_ROLL", 0L);
-            sampleData.put("userId", 1L);
-            sampleData.put("vehicleNumPlate", "ABC123");
-            canBusDataList.add(sampleData);
-
+            // Create JSON array with an empty object to satisfy server requirements
             JSONArray jsonArray = new JSONArray();
-            for (Map<String, Object> packet : canBusDataList) {
-                JSONObject jsonObject = new JSONObject(packet);
-                jsonArray.put(jsonObject);
-            }
-
+            jsonArray.put(new JSONObject());  // Add empty object to array
+            
             JSONObject jsonInput = new JSONObject();
             jsonInput.put("canBusData", jsonArray);
 
