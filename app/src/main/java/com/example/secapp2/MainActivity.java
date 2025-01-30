@@ -6,15 +6,9 @@ import android.os.Handler;
 import android.os.Looper;
 import android.widget.TextView;
 import android.util.Log;
-import org.json.JSONArray;
 import org.json.JSONObject;
 import org.json.JSONException;
-
-import java.util.Iterator;
-
-import com.google.android.material.snackbar.Snackbar;
 import com.google.android.material.navigation.NavigationView;
-
 import androidx.navigation.NavController;
 import androidx.navigation.Navigation;
 import androidx.navigation.ui.AppBarConfiguration;
@@ -62,12 +56,7 @@ public class MainActivity extends AppCompatActivity {
         setContentView(binding.getRoot());
 
         setSupportActionBar(binding.appBarMain.toolbar);
-        binding.appBarMain.fab.setOnClickListener(view -> 
-            Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                    .setAction("Action", null)
-                    .setAnchorView(R.id.fab)
-                    .show()
-        );
+        
         DrawerLayout drawer = binding.drawerLayout;
         NavigationView navigationView = binding.navView;
         
@@ -123,27 +112,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private String formatMessage(String rawMessage) {
-        try {
-            // Parse the JSON message if it's in JSON format
-            JSONObject json = new JSONObject(rawMessage);
-            // Format it according to your needs
-            // This is an example - modify according to your actual message structure
-            StringBuilder formatted = new StringBuilder();
-            formatted.append("Message received:\n");
-            
-            // Iterate through JSON keys and format them
-            for (Iterator<String> it = json.keys(); it.hasNext(); ) {
-                String key = it.next();
-                formatted.append(key).append(": ").append(json.get(key)).append("\n");
-            }
-            
-            return formatted.toString();
-        } catch (Exception e) {
-            // If not JSON or other error, return raw message
-            return rawMessage;
-        }
-    }
 
     private void registerApp() {
         try {
@@ -205,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
             jsonInput.put("ip", getLocalIpAddress());
             jsonInput.put("port", LOCAL_PORT);
 
-            Log.d(TAG, "Sending warning check: " + jsonInput.toString());
+            Log.d(TAG, "Sending warning check: " + jsonInput);
             
             RequestBody body = RequestBody.create(
                 jsonInput.toString(),
@@ -233,11 +201,14 @@ public class MainActivity extends AppCompatActivity {
                             Log.d(TAG, "Warning response: " + responseData);
                             if (response.isSuccessful()) {
                                 JSONObject jsonResponse = new JSONObject(responseData);
-                                Boolean warningPlayed= jsonResponse.getBoolean("exists");
-                                Log.d("Json response is : " , String.valueOf(warningPlayed));
-                                String message = jsonResponse.optString("message", "");
-                                if (!message.isEmpty() && !message.contains("missing")) {
-                                    updateUI("Warning: " + message);
+                                boolean success = jsonResponse.optBoolean("success", true);
+                                Log.d(TAG, "Success value: " + success);
+                                
+                                if (!success) {
+                                    String message = jsonResponse.optString("message", "Unknown warning");
+                                    displayWarning("⚠️ Warning: " + message);
+                                } else {
+                                    displayWarning("No warning now");
                                 }
                             } else {
                                 Log.e(TAG, "Warning check failed with code: " + response.code());
@@ -304,9 +275,8 @@ public class MainActivity extends AppCompatActivity {
 
     // Add a new method to start the warning server
     private void startWarningServer() {
-        try {
-            ServerSocket serverSocket = new ServerSocket(LOCAL_PORT);
-            new Thread(() -> {
+        new Thread(() -> {
+            try (ServerSocket serverSocket = new ServerSocket(LOCAL_PORT)) {
                 while (!Thread.interrupted()) {
                     try {
                         Socket socket = serverSocket.accept();
@@ -315,10 +285,10 @@ public class MainActivity extends AppCompatActivity {
                         Log.e(TAG, "Error accepting connection", e);
                     }
                 }
-            }).start();
-        } catch (IOException e) {
-            Log.e(TAG, "Error starting warning server", e);
-        }
+            } catch (IOException e) {
+                Log.e(TAG, "Error starting warning server", e);
+            }
+        }).start();
     }
 
     private void handleWarningRequest(Socket socket) {
@@ -340,13 +310,14 @@ public class MainActivity extends AppCompatActivity {
             }
 
             char[] body = new char[contentLength];
-            reader.read(body, 0, contentLength);
-            String warningMessage = new String(body);
+            int bytesRead = reader.read(body, 0, contentLength);
+            
+            if (bytesRead > 0) {
+                String warningMessage = new String(body, 0, bytesRead);
 
-            // Update UI with the warning message
-            mainHandler.post(() -> {
-                updateUI("Received Warning: " + warningMessage);
-            });
+                // Update UI with the warning message
+                mainHandler.post(() -> updateUI("Received Warning: " + warningMessage));
+            }
 
             // Send response
             PrintWriter writer = new PrintWriter(socket.getOutputStream());
@@ -361,5 +332,14 @@ public class MainActivity extends AppCompatActivity {
         } catch (IOException e) {
             Log.e(TAG, "Error handling warning request", e);
         }
+    }
+
+    private void displayWarning(final String warningMessage) {
+        mainHandler.post(() -> {
+            TextView warningTextView = findViewById(R.id.warningTextView);
+            if (warningTextView != null) {
+                warningTextView.setText(warningMessage);
+            }
+        });
     }
 }
